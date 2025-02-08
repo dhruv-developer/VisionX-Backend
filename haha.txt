@@ -1,0 +1,5 @@
+export MONGO_URI="mongodb+srv://dhruvdawar11022006:dd110206@cluster0.h7e0n.mongodb.net/"
+export CLOUD_NAME="dacktqtlm"
+export CLOUD_API_KEY="789292238951276"
+export CLOUD_API_SECRET="NaqN5TBybjx9OMcuY9aibTuYurw"
+export JWT_SECRET="1234"
