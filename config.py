@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from groq import Groq
 
 # MongoDB Connection
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://dhruvdawar11022006:dd110206@cluster0.gohdq.mongodb.net/")
 DB_NAME = os.getenv("DB_NAME", "intellica_courses")  # ✅ Updated DB Name
 
 client = MongoClient(MONGO_URI)
