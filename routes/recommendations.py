@@ -32,30 +32,14 @@ def recommend_courses(
     logging.info(f"📌 Fetching AI + Real Course Recommendations for {specialization} (Level: {required_level}, Budget: ${budget})")
 
     # ✅ Run AI Agents to Filter Courses
-    try:
-        agent_recommendations = run_agents(specialization, quiz_score, required_level)
-        logging.info(f"🤖 AI Agent Recommendations: {len(agent_recommendations)} courses found.")
-    except Exception as e:
-        logging.error(f"❌ AI Agent Error: {e}")
-        agent_recommendations = []
+    agent_recommendations = run_agents(specialization, quiz_score, required_level)
 
-    # ✅ Fetch Courses by Scraping Udemy, YouTube (via API), Coursera
+    # ✅ Fetch Courses by Scraping Udemy, YouTube, Coursera
     scraped_courses = fetch_courses(specialization, budget, required_level)
 
-    # ✅ Ensure YouTube courses are fetched properly
-    if "youtube" not in scraped_courses or not scraped_courses["youtube"]:
-        logging.warning("⚠️ No YouTube courses found. Check API key or quota limits.")
-
-    # ✅ Handle missing AI recommendations
-    if not agent_recommendations:
-        logging.warning("⚠️ AI Agent did not return any recommendations.")
-
-    # ✅ Limit final recommendations properly
-    final_courses = (agent_recommendations[:limit] + 
-                     scraped_courses["udemy"][:limit] + 
-                     scraped_courses["coursera"][:limit] + 
-                     scraped_courses["youtube"][:limit])
-
+    # ✅ Limit final recommendations to user preference
+    final_courses = agent_recommendations[:limit] + scraped_courses["udemy"][:limit] + scraped_courses["coursera"][:limit] + scraped_courses["youtube"][:limit]
+    
     # ✅ Ensure every course has a valid link
     for course in final_courses:
         if "link" not in course or not course["link"]:
