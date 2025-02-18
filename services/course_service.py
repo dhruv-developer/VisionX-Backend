@@ -5,41 +5,77 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-def fetch_udemy_courses(topic, budget, level):
-    """Fetch Udemy courses dynamically."""
+# Exchange rate (Assumption: 1 USD ≈ 83 INR)
+USD_TO_INR = 83  
+
+def fetch_udemy_courses(topic, budget, level, language="English"):
+    """Fetch Udemy courses dynamically with INR pricing and language filter."""
     url = f"https://www.udemy.com/courses/search/?q={topic}+{level}"
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
 
     courses = []
-    for course in soup.find_all("div", class_="course-card--course-title"):
-        courses.append({
-            "title": course.text,
-            "price": 10,  # ✅ Assume $10 for now
-            "platform": "Udemy",
-            "link": "https://www.udemy.com"  # ✅ Placeholder, should extract real link
-        })
+    for course in soup.find_all("div", class_="course-card--container"):
+        title_tag = course.find("div", class_="course-card--course-title")
+        link_tag = course.find("a", class_="course-card-link")
+        
+        if title_tag and link_tag:
+            course_title = title_tag.text.strip()
+            course_link = f"https://www.udemy.com{link_tag.get('href')}"
+            
+            courses.append({
+                "title": course_title,
+                "price": 10 * USD_TO_INR,  # ✅ Assuming $10 converted to INR
+                "currency": "INR",
+                "platform": "Udemy",
+                "link": course_link,
+                "language": language
+            })
 
     return [c for c in courses if c["price"] <= budget]
 
-def fetch_coursera_courses(topic):
+def fetch_coursera_courses(topic, language="English"):
     """Fetch Coursera courses dynamically."""
     url = f"https://api.coursera.org/api/courses.v1?q=search&query={topic}"
-    response = requests.get(url)
-    courses = response.json().get("elements", [])
-    return [{"title": c.get("name", "Unknown Course"), "platform": "Coursera", "link": f"https://www.coursera.org/learn/{c.get('slug', '')}"} for c in courses]
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        courses = response.json().get("elements", [])
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to fetch Coursera courses: {e}")
+        return []
 
-def fetch_youtube_videos(topic):
+    return [
+        {
+            "title": c.get("name", "Unknown Course"),
+            "platform": "Coursera",
+            "link": f"https://www.coursera.org/learn/{c.get('slug', '')}",
+            "language": language
+        }
+        for c in courses
+    ]
+
+def fetch_youtube_videos(topic, language="English"):
     """Fetch YouTube courses dynamically."""
     ydl_opts = {"quiet": True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         search_result = ydl.extract_info(f"ytsearch10:{topic}", download=False)
-        return [{"title": v["title"], "platform": "YouTube", "link": v["webpage_url"]} for v in search_result.get("entries", [])]
+    
+    return [
+        {
+            "title": v["title"],
+            "platform": "YouTube",
+            "link": v["webpage_url"],
+            "language": language
+        }
+        for v in search_result.get("entries", [])
+    ]
 
-def fetch_courses(topic, budget, level):
-    """Fetch courses from Udemy, Coursera, and YouTube."""
+def fetch_courses(topic, budget, level, language="English"):
+    """Fetch courses from Udemy, Coursera, and YouTube with INR currency and language support."""
     return {
-        "udemy": fetch_udemy_courses(topic, budget, level),
-        "coursera": fetch_coursera_courses(topic),
-        "youtube": fetch_youtube_videos(topic)
+        "udemy": fetch_udemy_courses(topic, budget, level, language),
+        "coursera": fetch_coursera_courses(topic, language),
+        "youtube": fetch_youtube_videos(topic, language)
     }

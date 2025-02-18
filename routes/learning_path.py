@@ -1,143 +1,152 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, EmailStr
+from typing import Optional, List, Dict
 from config import groq_client
-from utils.email_service import send_email  # ✅ Ensure correct import
+from utils.email_service import send_email
 import json
 import logging
+import re
 
 router = APIRouter()
 logging.basicConfig(level=logging.INFO)
 
-@router.post("/generate_learning_path/")
-def generate_learning_path(
-    user_id: str,
-    goal: str,
-    send_email: bool = False,
-    user_email: str = Query(None, title="User Email (Required if send_email=true)")
-):
-    """ 
-    1️⃣ Identifies necessary skills 
-    2️⃣ Generates a 5-question quiz 
-    3️⃣ Recommends a structured learning path 
-    4️⃣ Optionally emails the learning path to the user 
-    """
+# ✅ Request Model
+class LearningPathRequest(BaseModel):
+    user_id: str
+    goal: str
+    send_email: bool = False
+    user_email: Optional[EmailStr] = None
+
+# ✅ Response Model
+class QuizQuestion(BaseModel):
+    question: str
+    options: List[str]  # ✅ FIXED: Now only accepts a list of strings
+    correct_answer: str
+
+class LearningPathResponse(BaseModel):
+    goal: str
+    required_skills: List[str]
+    quiz: List[QuizQuestion]
+    learning_path: List[str]
+    email_status: str
+
+def extract_json_from_text(response_content: str):
+    """✅ Extracts valid JSON from AI response, removing extra AI-generated text."""
+    try:
+        parsed_data = json.loads(response_content.strip())
+        return parsed_data
+    except json.JSONDecodeError:
+        pass  # ✅ Continue to regex extraction if direct parsing fails
+
+    json_matches = re.findall(r"```json\n(.*?)\n```", response_content, re.DOTALL)
+
+    if json_matches:
+        try:
+            extracted_json = json.loads(json_matches[0])
+            return extracted_json
+        except json.JSONDecodeError as e:
+            logging.error(f"❌ Failed to parse extracted JSON: {e}")
+            raise HTTPException(status_code=500, detail="AI returned malformed JSON.")
+
+    try:
+        json_start = response_content.find("[")
+        json_end = response_content.rfind("]")
+        if json_start != -1 and json_end != -1:
+            extracted_json = json.loads(response_content[json_start : json_end + 1])
+            return extracted_json
+    except json.JSONDecodeError as e:
+        logging.error(f"❌ No valid JSON found in AI response: {response_content}")
+        raise HTTPException(status_code=500, detail=f"AI response was not valid JSON. Error: {e}")
+
+    logging.error(f"❌ No valid JSON found. Raw response: {response_content}")
+    raise HTTPException(status_code=500, detail="AI response did not contain valid JSON.")
+
+def parse_json_response(response_content: str, label: str):
+    """✅ Parses AI responses and logs errors if JSON parsing fails."""
+    try:
+        extracted_json = extract_json_from_text(response_content)
+        logging.info(f"✅ Parsed {label}: {extracted_json}")
+        return extracted_json
+    except json.JSONDecodeError as e:
+        logging.error(f"❌ Failed to parse {label}. Raw response: {response_content} Error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI response for {label} was not valid JSON.")
+
+@router.post("/generate_learning_path/", response_model=LearningPathResponse)
+def generate_learning_path(request: LearningPathRequest):
+    """Generates a structured learning path based on a user's goal."""
 
     # ✅ 1. Identify Required Skills
-    logging.info(f"🔍 Identifying required skills for {goal}...")
+    logging.info(f"🔍 Identifying skills for goal: {request.goal}...")
 
     skills_prompt = f"""
-    List the most important skills required to achieve this goal: {goal}.
-    Format the response STRICTLY as a JSON array with no extra text.
-    Example: ["Skill 1", "Skill 2", "Skill 3"]
+    List essential skills needed to achieve this goal: {request.goal}.
+    Strict JSON format: ["Skill 1", "Skill 2", "Skill 3"]
     """
-    
+
     skills_response = groq_client.chat.completions.create(
         messages=[{"role": "user", "content": skills_prompt}],
         model="llama-3.3-70b-versatile",
     )
-
-    try:
-        raw_skills = skills_response.choices[0].message.content.strip()
-        logging.info(f"🛠 AI Response (Raw Skills): {raw_skills}")
-        required_skills = json.loads(raw_skills)  # ✅ Ensures correct JSON format
-    except json.JSONDecodeError as e:
-        logging.error(f"❌ Skill Extraction Failed: {e}")
-        return {"error": "Failed to identify required skills.", "raw_response": raw_skills}
+    required_skills = parse_json_response(skills_response.choices[0].message.content, "Required Skills")
 
     # ✅ 2. Generate a Quiz
-    logging.info(f"📝 Generating quiz for skills: {required_skills}...")
+    logging.info(f"📝 Creating quiz for skills: {required_skills}...")
 
     quiz_prompt = f"""
-    Generate a 5-question multiple-choice quiz to assess knowledge in these skills: {', '.join(required_skills)}.
-    Format the response STRICTLY as a JSON array with no extra text.
-    Each object should have:
-    - "question": The question text
-    - "options": A list of 4 multiple-choice answers
-    - "correct_answer": The correct option (e.g., "A", "B", "C", or "D")
+    Generate a 5-question multiple-choice quiz for these skills: {', '.join(required_skills)}.
+    Strict JSON format:
+    [
+      {{"question": "What is HTML?", "options": ["Option A", "Option B", "Option C", "Option D"], "correct_answer": "A"}}
+    ]
     """
 
     quiz_response = groq_client.chat.completions.create(
         messages=[{"role": "user", "content": quiz_prompt}],
         model="llama-3.3-70b-versatile",
     )
+    raw_quiz_questions = parse_json_response(quiz_response.choices[0].message.content, "Quiz Questions")
 
-    try:
-        raw_quiz = quiz_response.choices[0].message.content.strip()
-        logging.info(f"📝 AI Response (Raw Quiz): {raw_quiz}")
-        quiz_questions = json.loads(raw_quiz)
-    except json.JSONDecodeError as e:
-        logging.error(f"❌ Quiz Generation Failed: {e}")
-        return {"error": "Failed to generate quiz.", "raw_response": raw_quiz}
+    # ✅ FIX: Ensure all options are plain strings (not dictionaries)
+    quiz_questions = []
+    for q in raw_quiz_questions:
+        if isinstance(q["options"][0], dict):  # ✅ AI returned options as {"A": "text"} instead of "text"
+            fixed_options = [list(opt.values())[0] for opt in q["options"]]  # ✅ Convert to list of strings
+        else:
+            fixed_options = q["options"]
+
+        quiz_questions.append({
+            "question": q["question"],
+            "options": fixed_options,
+            "correct_answer": q["correct_answer"]
+        })
+
+    logging.info(f"✅ Fixed Quiz Format: {quiz_questions}")
 
     # ✅ 3. Recommend Learning Path
-    logging.info(f"📚 Creating learning path for {goal}...")
+    logging.info(f"📚 Structuring learning path for {request.goal}...")
 
     learning_path_prompt = f"""
-    Recommend a structured learning path for a beginner in {goal}.
-    Use these skills: {', '.join(required_skills)}.
-    Format the response STRICTLY as a JSON array with no extra text.
-    Example: ["Step 1", "Step 2", "Step 3"]
+    Suggest a structured learning path for achieving {request.goal} using: {', '.join(required_skills)}.
+    Strict JSON format: ["Step 1", "Step 2", "Step 3"]
     """
 
     learning_path_response = groq_client.chat.completions.create(
         messages=[{"role": "user", "content": learning_path_prompt}],
         model="llama-3.3-70b-versatile",
     )
+    learning_path = parse_json_response(learning_path_response.choices[0].message.content, "Learning Path")
 
-    try:
-        raw_learning_path = learning_path_response.choices[0].message.content.strip()
-        logging.info(f"📚 AI Response (Raw Learning Path): {raw_learning_path}")
-        learning_path = json.loads(raw_learning_path)
-    except json.JSONDecodeError as e:
-        logging.error(f"❌ Learning Path Generation Failed: {e}")
-        return {"error": "Failed to generate learning path.", "raw_response": raw_learning_path}
-
-    # ✅ 4. Email the Learning Path (if requested)
+    # ✅ 4. Email Learning Path (if requested)
     email_status = "Email not requested."
-    if send_email and user_email:
-        logging.info(f"📩 Sending learning path to {user_email}...")
-        email_sent = send_learning_path_email(user_email, goal, required_skills, quiz_questions, learning_path)
-        email_status = "Email sent successfully!" if email_sent else "Failed to send email."
+    if request.send_email and request.user_email:
+        logging.info(f"📩 Sending learning path to {request.user_email}...")
+        email_sent = send_email(request.user_email, f"Learning Path for {request.goal}", str(learning_path))
+        email_status = "✅ Email sent!" if email_sent else "❌ Email failed."
 
     return {
-        "goal": goal,
+        "goal": request.goal,
         "required_skills": required_skills,
         "quiz": quiz_questions,
         "learning_path": learning_path,
         "email_status": email_status
     }
-
-def send_learning_path_email(to_email, goal, required_skills, quiz, learning_path):
-    """ ✅ Sends structured email with the learning path """
-    logging.info(f"📩 Preparing email for {to_email}...")
-
-    subject = f"🎯 Your AI-Powered Learning Path for {goal}"
-
-    quiz_html = "".join([
-        f"<li><b>{q['question']}</b><br>A) {q['options'][0]} | B) {q['options'][1]} | C) {q['options'][2]} | D) {q['options'][3]}</li>"
-        for q in quiz
-    ])
-
-    path_html = "".join([f"<li>{step}</li>" for step in learning_path])
-
-    html_content = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; padding: 20px; border: 1px solid #ddd; border-radius: 10px; background-color: #f9f9f9;">
-        <h2 style="color: #007bff; text-align: center;">🚀 Your AI-Powered Learning Path for {goal}</h2>
-        <p><b>Required Skills:</b> {', '.join(required_skills)}</p>
-        <h3>📝 Your Quiz</h3>
-        <ul>{quiz_html}</ul>
-        <h3>📚 Recommended Learning Path</h3>
-        <ul>{path_html}</ul>
-        <hr style="border: 0; height: 1px; background: #ddd;">
-        <p style="text-align: center;">Happy Learning! 🚀</p>
-        <p style="text-align: center;"><b>Best Regards,<br>Intellica Team</b></p>
-    </div>
-    """
-
-    email_sent = send_email(to_email, subject, html_content)
-
-    if email_sent:
-        logging.info(f"✅ Email sent successfully to {to_email}")
-    else:
-        logging.error(f"❌ Email failed to send to {to_email}")
-
-    return email_sent

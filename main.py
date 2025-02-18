@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import user, quiz, recommendations, youtube_summary, learning_path
+from routes import user, quiz, recommendations, youtube_summary, learning_path, daily_content
 from database import db
 import logging
 
@@ -19,6 +19,7 @@ app.add_middleware(
 # ✅ Register API routes
 app.include_router(user.router, prefix="/user", tags=["User Management"])
 app.include_router(quiz.router, prefix="/quiz", tags=["Quiz System"])
+app.include_router(daily_content.router, prefix="/daily-content", tags=["Daily"])
 app.include_router(recommendations.router, prefix="/recommendations", tags=["Course Recommendations"])
 app.include_router(youtube_summary.router, prefix="/youtube", tags=["YouTube Summarization"])  # ✅ Added YouTube Summary API
 app.include_router(learning_path.router, prefix="/learning", tags=["Learning Path Generator"])

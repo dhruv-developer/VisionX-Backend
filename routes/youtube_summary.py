@@ -70,12 +70,16 @@ def send_summary_email(to_email, video_url, summary, language):
 
 @router.post("/youtube_summary/")
 def youtube_summary(
-    youtube_url: str, 
-    language_code: str = "en", 
-    send_email: bool = False, 
+    youtube_url: str = Query(..., title="YouTube Video URL"), 
+    language_code: str = Query("en", title="Language Code"), 
+    send_email: bool = Query(False, title="Send Email?"), 
     user_email: str = Query(None, title="User Email (Required if send_email=true)")
 ):
     """Extracts, summarizes, translates YouTube video transcripts & optionally emails the summary."""
+    
+    if send_email and not user_email:
+        return {"error": "Email is required if 'send_email' is true."}
+
     video_id = get_video_id(youtube_url)
     if not video_id:
         return {"error": "Invalid YouTube URL. Please enter a valid link."}

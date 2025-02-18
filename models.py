@@ -11,3 +11,4 @@ class UserProfile(BaseModel):
     budget: float = 0.0
     quiz_score: Optional[int] = None
     generated_embedding: Optional[List[float]] = None
+    language: str = "english"
