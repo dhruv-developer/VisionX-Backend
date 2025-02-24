@@ -15,6 +15,7 @@ transformers
 pydantic
 pytz
 torch
+email-validator
 pydantic
 youtube_transcript_api
 youtube-search-python
