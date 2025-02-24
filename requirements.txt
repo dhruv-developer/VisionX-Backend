@@ -11,4 +11,6 @@ groq
 beautifulsoup4
 yt_dlp
 langchain
+torch
+pydantic
 youtube-search-python
