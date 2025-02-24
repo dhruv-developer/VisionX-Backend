@@ -9,5 +9,6 @@ python-dotenv
 requests
 groq
 beautifulsoup4
+yt_dlp
 langchain
 youtube-search-python
