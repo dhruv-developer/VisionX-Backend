@@ -16,4 +16,5 @@ pydantic
 pytz
 torch
 pydantic
+youtube_transcript_api
 youtube-search-python
