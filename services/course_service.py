@@ -2,6 +2,7 @@ import requests
 import yt_dlp
 from bs4 import BeautifulSoup
 import logging
+import time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -57,20 +58,37 @@ def fetch_coursera_courses(topic, language="English"):
     ]
 
 def fetch_youtube_videos(topic, language="English"):
-    """Fetch YouTube courses dynamically."""
+    """Fetch YouTube courses dynamically with error handling & retries."""
     ydl_opts = {"quiet": True}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        search_result = ydl.extract_info(f"ytsearch10:{topic}", download=False)
-    
-    return [
-        {
-            "title": v["title"],
-            "platform": "YouTube",
-            "link": v["webpage_url"],
-            "language": language
-        }
-        for v in search_result.get("entries", [])
-    ]
+    attempts = 0
+
+    while attempts < 5:
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                search_result = ydl.extract_info(f"ytsearch10:{topic}", download=False)
+                return [
+                    {
+                        "title": v.get("title", "Unknown Video"),
+                        "platform": "YouTube",
+                        "link": v.get("webpage_url", "#"),
+                        "language": language
+                    }
+                    for v in search_result.get("entries", []) if v
+                ]
+        except yt_dlp.utils.ExtractorError as e:
+            logging.error(f"Extractor Error: {e}, skipping...")
+            return []
+        except yt_dlp.utils.DownloadError as e:
+            if "429" in str(e):
+                wait_time = 2**attempts  # Exponential backoff
+                logging.warning(f"⚠️ Rate-limited! Retrying in {wait_time} sec...")
+                time.sleep(wait_time)
+                attempts += 1
+            else:
+                logging.error(f"YouTube Download Error: {e}")
+                return []
+
+    return []
 
 def fetch_courses(topic, budget, level, language="English"):
     """Fetch courses from Udemy, Coursera, and YouTube with INR currency and language support."""
