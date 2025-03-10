@@ -38,7 +38,7 @@ class RecommendationResponse(BaseModel):
 
 @router.post("/recommend_courses/", response_model=RecommendationResponse)
 def recommend_courses(request: CourseRequest):
-    """Recommend courses based on quiz score, user needs, and scrape Udemy, YouTube, and Coursera."""
+    """Recommend courses based on quiz score, user needs, and scrape Udemy and Coursera (YouTube Removed)."""
     
     user = users_collection.find_one({"_id": ObjectId(request.user_id)})
     if not user:
@@ -57,15 +57,15 @@ def recommend_courses(request: CourseRequest):
     # ✅ Run AI Agents to Filter Courses
     agent_recommendations = run_agents(specialization, quiz_score, required_level, language, embeddings)
 
-    # ✅ Fetch Courses by Scraping Udemy, YouTube, Coursera
+    # ✅ Fetch Courses by Scraping Udemy and Coursera (YouTube Removed)
     scraped_courses = fetch_courses(specialization, budget_inr, required_level, language)
 
     # ✅ Merge courses while maintaining limit
     final_courses = (
         agent_recommendations[:request.limit] +
         scraped_courses["udemy"][:request.limit] +
-        scraped_courses["coursera"][:request.limit] +
-        scraped_courses["youtube"][:request.limit]
+        scraped_courses["coursera"][:request.limit]
+        # scraped_courses["youtube"][:request.limit]  # ❌ Removed YouTube
     )
 
     # ✅ Ensure valid course data
