@@ -77,11 +77,12 @@ def send_course_recommendation_email(email, courses):
     # Ensure all courses have valid links
     course_list = ""
     for c in courses:
-        course_name = c.get("course_name", "Unnamed Course")
-        platform = c.get("platform", "Unknown Platform")
-        link = c.get("link", "#")  # Fallback to "#" if no link is found
-        price = c.get("price", "N/A")
-        difficulty = c.get("difficulty_level", "Unknown Level")
+        course_name = c.title  # Direct attribute access
+        platform = c.platform
+        link = c.link  # Fallback to "#" if no link is found
+        price = getattr(c, "price", "N/A")
+        difficulty = getattr(c, "difficulty_level", "Unknown Level")
+        
         course_list += f"""
         <li style='margin-bottom: 15px; font-size: 16px;'>
             <b>{course_name}</b> - {platform} <br>
@@ -101,3 +102,4 @@ def send_course_recommendation_email(email, courses):
     </div>
     """
     return send_email(email, subject, html_content)
+
